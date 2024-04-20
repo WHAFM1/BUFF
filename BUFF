@@ -1,0 +1,1497 @@
+slot0 = class("BuffModel")
+globals.BuffModel = slot0
+slot0.IDCounter = 0
+slot1 = {
+	copyCasterBuffsToHolder = true,
+	transferBuffToOther = true,
+	copyForceBuffsToOther = true,
+	reborn = true
+}
+slot2 = {
+	lockHp = true,
+	keepHpUnChanged = true
+}
+slot4 = {
+	[battle.BuffTriggerPoint.onHolderBattleTurnStart] = true,
+	[battle.BuffTriggerPoint.onHolderBattleTurnEnd] = true,
+	[battle.BuffTriggerPoint.onRoundStart] = true,
+	[battle.BuffTriggerPoint.onRoundEnd] = true,
+	[battle.BuffTriggerPoint.onBuffTrigger] = true
+}
+
+table.merge(slot4, {
+	[battle.BuffTriggerPoint.onHolderBattleTurnStart] = true,
+	[battle.BuffTriggerPoint.onHolderBattleTurnEnd] = true,
+	[battle.BuffTriggerPoint.onHolderAttackBefore] = true,
+	[battle.BuffTriggerPoint.onHolderAttackEnd] = true,
+	[battle.BuffTriggerPoint.onHolderFinallyBeHit] = true,
+	[battle.BuffTriggerPoint.onHolderBeforeBeHit] = true,
+	[battle.BuffTriggerPoint.onHolderKillHandleChooseTarget] = true,
+	[battle.BuffTriggerPoint.onHolderBeForeSkillSpellTo] = true,
+	[battle.BuffTriggerPoint.onHolderToAttack] = true,
+	[battle.BuffTriggerPoint.onHolderBeForeSkillSpellTo] = true,
+	[battle.BuffTriggerPoint.onHolderCalcDamageProb] = true
+})
+
+slot0.IterAllPointsMap = slot4
+
+function slot0.BuffCmp(slot0, slot1)
+	if slot0.triggerPriority ~= slot1.triggerPriority then
+		return slot0.triggerPriority < slot1.triggerPriority
+	end
+
+	return slot0.id < slot1.id
+end
+
+function slot0.ctor(slot0, slot1, slot2, slot3, slot4)
+	uv0.IDCounter = uv0.IDCounter + 1
+	slot0.id = uv0.IDCounter
+	slot0.scene = slot2.scene
+	slot0.cfgId = slot1
+	slot0.csvCfg = csv.buff[slot1]
+	slot0.csvPower = csv.buff_group_power[slot0.csvCfg.groupPower]
+	slot0.caster = slot3
+	slot0.holder = slot2
+	slot0.extraTargets = {
+		[battle.BuffExtraTargetType.lastProcessTargets] = slot4.lastProcessTargets or {},
+		[battle.BuffExtraTargetType.holderBeAttackFrom] = {},
+		[battle.BuffExtraTargetType.skillAllDamageTargets] = slot4.currentAttackTarget or {},
+		[battle.BuffExtraTargetType.overLayBuffCaster] = {},
+		[battle.BuffExtraTargetType.segProcessTargets] = {}
+	}
+	slot0.startRound = 0
+	slot0.nowRound = 0
+
+	slot0:setRound()
+
+	slot0.nowWave = slot0.scene.play.curWave
+	slot0.args = slot4
+	slot0.lifeRound = slot4.lifeRound
+	slot0.source = slot4.source
+	slot0.fromSkillLevel = slot4.skillLevel
+	slot0.isInited = false
+	slot0.isOver = false
+	slot0.isEffect = false
+	slot0.buffValue = nil
+	slot0.value = nil
+	slot0.doEffectValue = nil
+	slot0.isNumberType = true
+	slot0.triggerPriority = slot0.csvCfg.triggerPriority or 10
+	slot0.isAuraType = slot4.isAuraType
+	slot0.lifeRounds = {}
+	slot0.overlayType = slot0.csvCfg.overlayType
+	slot0.overlayCount = slot4.overlayCount or 1
+	slot0.objThatTriggeringMeNow = nil
+	slot0.triggerEnv = {}
+	slot0.bondChildBuffsTb = {}
+	slot0.bondToOtherBuffsTb = {}
+	slot0.triggerAddAttrTb = {}
+	slot0.nodeManager = BuffNodeManager.new(slot0)
+	slot0.exRecordNameTb = {}
+	slot0.protectedEnv = battleCsv.makeProtectedEnv(slot0.caster, nil, slot0)
+	slot0.castBuffEnvAdded = false
+	slot0.castBuffGroup = CList.new()
+	slot0.buffInitEnhanceVal = nil
+	slot0.isShow = slot0.csvCfg.isShow
+	slot0.isOnceEffectPlayed = not slot0.isShow
+	slot0.isFieldBuff = slot0.csvCfg.easyEffectFunc == "fieldBuff"
+	slot0.isFieldSubBuff = slot4.fieldSub
+	slot0.gateLimit = slot0:cfg2Value(slot0.csvCfg.gateLimit)
+	slot0.damageRecord = 0
+end
+
+function slot0.setRound(slot0)
+	if slot0.csvCfg.lifeRoundType == battle.lifeRoundType.battleTurn then
+		slot0.startRound = slot0.holder:getBattleRoundAllWave(slot0.csvCfg.skillTimePos)
+		slot0.nowRound = slot0.holder:getBattleRoundAllWave(slot0.csvCfg.skillTimePos)
+	elseif slot0.csvCfg.lifeRoundType == battle.lifeRoundType.round then
+		slot0.startRound = slot0.scene.play.totalRound
+		slot0.nowRound = slot0.scene.play.totalRound
+	elseif slot0.csvCfg.lifeRoundType == battle.lifeRoundType.pureBattleTurn then
+		slot0.startRound = slot0.holder:getBattleRoundAllWave(slot0.csvCfg.skillTimePos, true)
+		slot0.nowRound = slot0.holder:getBattleRoundAllWave(slot0.csvCfg.skillTimePos, true)
+	end
+end
+
+function slot0.getDamageRecord(slot0)
+	return slot0.damageRecord
+end
+
+function slot0.setDamageRecord(slot0, slot1)
+	slot0.damageRecord = slot0.damageRecord + slot1
+end
+
+function slot0.checkCanDispelBuff(slot0, slot1)
+	if slot1.holder.cantDispelTb and next(slot1.holder.cantDispelTb) then
+		if slot1.holder.cantDispelTb.buffGroupTb[slot1:group()] then
+			slot1.cantDispelBuffRound = {
+				slot0.nowRound,
+				slot1.holder.cantDispelTb.buffRound
+			}
+		end
+	end
+
+	if slot1.cantDispelBuffRound and next(slot1.cantDispelBuffRound) then
+		if slot0.nowRound < slot1.cantDispelBuffRound[1] + slot1.cantDispelBuffRound[2] then
+			return false
+		else
+			slot1.cantDispelBuffRound = nil
+		end
+	end
+
+	return true
+end
+
+function slot0.getTobeDispeledBuffs(slot0, slot1, slot2)
+	if table.length(slot2) > 0 then
+		table.sort(slot2, function (slot0, slot1)
+			return slot0.id < slot1.id
+		end)
+
+		for slot7, slot8 in ipairs(slot2) do
+			if slot0:checkCanDispelBuff(slot8) then
+				slot0:addExRecord(battle.ExRecordEvent.dispelBuffCount, 1)
+				logf.battle.buff.dispel("buff %s dispel buff %s bufftype=%s", slot0.cfgId, slot8.cfgId, slot8.csvCfg.easyEffectFunc)
+				slot8:BeDispel((slot0.csvCfg.dispelType[3] or 0) == 0)
+			end
+		end
+
+		slot0:triggerByMoment(battle.BuffTriggerPoint.onBuffTrigger)
+
+		slot1 = true
+		slot2 = {}
+	end
+
+	return slot1, slot2
+end
+
+function slot0.setDispeledBuffs(slot0, slot1, slot2)
+	slot5 = slot3[2] or 0
+	slot6 = slot3[3] or 0
+	slot7 = {}
+	slot8 = {}
+	slot9 = {}
+
+	function slot10(slot0, slot1)
+		if not uv0[slot1] then
+			uv0[slot1] = CMap.new(function (slot0, slot1)
+				return slot0.id < slot1.id
+			end)
+
+			table.insert(uv1, slot1)
+		end
+
+		uv2[slot1] = uv2[slot1] + 1
+
+		uv0[slot1]:insert(slot0.id, slot0)
+	end
+
+	function slot11(slot0)
+		slot1 = false
+
+		if uv1[slot0] <= uv0 then
+			slot1 = true
+		elseif uv0 > 0 and ymrand.random(0, 1) == 1 then
+			slot1 = true
+		end
+
+		uv1[slot0] = uv1[slot0] - 1
+
+		if slot1 then
+			uv0 = uv0 - 1
+		end
+
+		return slot1
+	end
+
+	if (slot0.csvCfg.dispelType[1] or 0) ~= nil then
+		if slot4 == 2 then
+			function slot10(slot0, slot1)
+				if not uv0[slot1] then
+					uv0[slot1] = CMap.new()
+
+					table.insert(uv1, slot1)
+				end
+
+				if not uv0[slot1]:find(slot0:group()) then
+					uv0[slot1]:insert(slot2, CMap.new())
+
+					uv2[slot1] = uv2[slot1] + 1
+				end
+
+				uv0[slot1]:find(slot2):insert(slot0.id, slot0)
+			end
+		elseif slot4 == 0 then
+			function slot11(slot0)
+				return true
+			end
+		end
+	end
+
+	for slot16, slot17 in ipairs(slot0.csvCfg.specialTarget and slot0.csvCfg.specialTarget[1] and slot0:getObjectsByCfg(slot0.csvCfg.specialTarget[1]) or {
+		slot0.holder
+	}) do
+		for slot21, slot22 in slot17:iterBuffs() do
+			slot23, slot24 = battleCsv.hasBuffGroup(slot2.dispelGroup, slot22:group())
+
+			if slot22.csvPower.beDispel == 1 and slot22.id ~= slot0.id and slot23 then
+				slot9[slot24] = slot9[slot24] or 0
+
+				slot10(slot22, slot24)
+			end
+		end
+	end
+
+	slot13 = {}
+
+	function slot14(slot0)
+		if not uv0[slot0.cfgId] then
+			uv0[slot0.cfgId] = 0
+		end
+
+		uv0[slot0.cfgId] = uv0[slot0.cfgId] + 1
+
+		if uv1 == 0 or uv1 > 0 and uv0[slot0.cfgId] <= uv1 then
+			table.insert(uv2, slot0)
+		end
+	end
+
+	for slot18, slot19 in ipairs(slot8) do
+		if slot7[slot19] then
+			for slot24, slot25 in slot20:order_pairs() do
+				if slot11(slot19) then
+					if slot4 and slot4 == 2 then
+						for slot29, slot30 in slot25:order_pairs() do
+							slot14(slot30)
+						end
+					else
+						slot14(slot25)
+					end
+				end
+			end
+		end
+	end
+end
+
+function slot0.dispelGroupBuff(slot0)
+	if not slot0.isInited then
+		return
+	end
+
+	slot0.dispelCount = 0
+	slot2 = {}
+	slot3 = false
+	slot4 = gBuffGroupRelationCsv[slot0:group()]
+
+	if csvSize(slot0.csvCfg.dispelBuff) > 0 then
+		for slot8, slot9 in slot0.holder:iterBuffs() do
+			if slot9.csvPower.beDispel == 1 and slot9.id ~= slot0.id and itertools.include(slot1, slot9.cfgId) then
+				table.insert(slot2, slot9)
+			end
+		end
+	end
+
+	slot3, slot2 = slot0:getTobeDispeledBuffs(slot3, slot2)
+
+	if slot0:group() ~= 0 and slot4 and slot4.dispelGroup then
+		slot0:setDispeledBuffs(slot2, slot4)
+	end
+
+	slot5, slot2 = slot0:getTobeDispeledBuffs(slot3, slot2)
+
+	if slot5 and slot0.caster and not slot0.caster:isDeath() then
+		slot0.caster:addExRecord(battle.ExRecordEvent.dispelSuccessCount, 1)
+		slot0:addExRecord(battle.ExRecordEvent.dispelSuccess, true)
+	end
+
+	return slot3
+end
+
+function slot0.initTriggerEvents(slot0)
+	for slot4, slot5 in pairs(slot0.nodeManager.points) do
+		if not uv0[slot4] then
+			slot0:subscribeEvent(slot0.holder, slot4, "onTriggerEvent")
+		end
+	end
+end
+
+function slot0.init(slot0)
+	if slot0.isOver then
+		return
+	end
+
+	if slot0.isInited then
+		return
+	end
+
+	if slot0.holder:isRealDeath() then
+		return
+	end
+
+	slot0.isInited = true
+
+	slot0.scene:checkCowWithBuff(slot0)
+	logf.battle.buff.init(" buff init() id=%s cfgId=%s buffType=%s groupId=%s lifeRound=%s prob=%s caster=%s holder=%s", slot0.id, slot0.cfgId, slot0.csvCfg.easyEffectFunc, slot0.csvCfg.group, slot0.lifeRound, slot0.args.prob, slot0.caster and slot0.caster.seat, slot0.holder.seat)
+
+	slot0.buffValue = clone(slot0:cfg2Value(slot0.args.value))
+	slot0.isNumberType = type(slot0.buffValue) == "number"
+
+	if slot0.isNumberType then
+		slot0.buffInitEnhanceVal = slot0.holder:getBuffEnhance(slot0:group(), 1)
+	end
+
+	slot0:setValue(slot0.buffValue)
+	battleComponents.bind(slot0, "Event")
+	slot0.nodeManager:init(slot0.csvCfg.triggerBehaviors)
+	slot0:initTriggerEvents()
+
+	if slot0.overlayType == battle.BuffOverlayType.Coexist or slot0.overlayType == battle.BuffOverlayType.CoexistLifeRound then
+		if not slot0.holder.buffOverlayCount[slot0.cfgId] then
+			slot0.holder.buffOverlayCount[slot0.cfgId] = 0
+		end
+
+		slot0.holder.buffOverlayCount[slot0.cfgId] = slot0.holder.buffOverlayCount[slot0.cfgId] > 0 and slot0.holder.buffOverlayCount[slot0.cfgId] or 1
+	end
+
+	logf.battle.buff.overlay("overlay buff id=%s cfgId=%s type:%d,overlay count:%d", slot0.id, slot0.cfgId, slot0.overlayType, slot0.overlayCount)
+
+	slot1 = slot0:dispelGroupBuff()
+
+	if slot0.scene:isCraftGateType() then
+		if not slot0.scene.play.craftBuffAddTimes[slot0.cfgId] then
+			slot0.scene.play.craftBuffAddTimes[slot0.cfgId] = {
+				0,
+				0
+			}
+		end
+
+		slot0.scene.play.craftBuffAddTimes[slot0.cfgId][slot0.holder.force] = slot0.scene.play.craftBuffAddTimes[slot0.cfgId][slot0.holder.force] + 1
+	end
+
+	slot0.holder:onBuffImmuneChange(slot0)
+	slot0:triggerByMoment(battle.BuffTriggerPoint.onBuffCreate)
+
+	if slot0.isFieldBuff then
+		slot0.scene:tirggerFieldBuffs(nil, slot0)
+	end
+
+	if slot0.isShow then
+		slot0.holder.view:proxy():onDealBuffEffectsMap(slot0.csvCfg.iconResPath, slot0.cfgId, slot0.csvCfg.isIconFrame)
+
+		slot2 = slot0:getBuffEffectAniArgs()
+		slot2.dispel = slot1
+		slot0.isOnceEffectPlayed = true
+
+		battleEasy.deferNotifyCantJump(slot0.holder.view, "playBuffAniEffect", slot2)
+
+		if slot0.csvCfg.buffshader and csvSize(slot0.csvCfg.buffshader) > 0 then
+			battleEasy.deferNotifyCantJump(slot0.holder.view, "playBuffShader", {
+				buffshader = slot0.csvCfg.buffshader,
+				buffId = slot0.cfgId
+			})
+		end
+
+		if slot0.csvCfg.stageArgs then
+			slot0.scene:recordSceneAlterBuff(slot0.id, slot0.cfgId)
+
+			slot3 = slot0.csvCfg.stageArgs
+			slot4 = getCsv(slot3[1].bkCsv)
+
+			battleEasy.deferNotifyCantJump(slot0.holder.view, "alterBattleScene", {
+				restore = false,
+				buffId = slot0.id,
+				aniName = slot4[1].aniName,
+				resPath = slot4[1].res,
+				x = slot4[1].x,
+				y = slot4[1].y,
+				delay = slot3[1].delay
+			})
+		end
+
+		if slot0.weatherCfgId then
+			battleEasy.deferNotifyCantJump(slot0.holder.view, "weatherRefresh", slot0)
+		end
+
+		slot0:playBuffProcessView()
+	end
+end
+
+function slot0.cfg2ValueWithEnv(slot0, slot1, slot2)
+	if not slot0 then
+		return
+	end
+
+	if type(slot0) == "table" then
+		for slot7, slot8 in csvMapPairs(slot0) do
+			if slot7 == "input" or slot7 == "process" then
+				-- Nothing
+			else
+				slot3[slot7] = uv0.cfg2ValueWithEnv(slot8, slot1)
+			end
+		end
+
+		return {
+			[slot7] = slot8
+		}
+	end
+
+	if ObjectAttrs.AttrsTable[slot0] then
+		return slot0
+	end
+
+	if slot0 == "lastMp1" then
+		return slot0
+	end
+
+	if (string.find(slot0, "target2") or string.find(slot0, "self2")) and not slot2 then
+		return slot0
+	end
+
+	return battleCsv.doFormula(slot0, slot1)
+end
+
+function slot0.cfg2ValueWithTrigger(slot0, slot1)
+	slot0.protectedEnv = battleCsv.fillFuncEnv(slot0.protectedEnv, {
+		trigger = slot0.triggerEnv
+	})
+
+	slot0.protectedEnv:resetEnv()
+
+	return slot0:cfg2Value(slot1)
+end
+
+function slot0.cfg2Value(slot0, slot1)
+	return slot0.cfg2ValueWithEnv(slot1, slot0.protectedEnv, slot0.castBuffEnvAdded)
+end
+
+function slot0.overClean(slot0, slot1)
+	slot1 = slot1 or {}
+	slot1.endType = battle.BuffOverType.clean
+
+	slot0:over(slot1)
+end
+
+function slot0.overBuffsInTable(slot0, slot1, slot2, slot3)
+	if table.length(slot1) <= 0 then
+		return
+	end
+
+	if slot3 then
+		table.sort(slot1, slot3)
+	end
+
+	for slot7, slot8 in ipairs(slot1) do
+		if slot8 then
+			slot8:over(slot2)
+		end
+	end
+end
+
+function slot0.over(slot0, slot1)
+	if slot0.isOver then
+		return
+	end
+
+	slot0.isOver = true
+	slot1 = slot1 or {}
+	slot1.endType = slot1.endType or battle.BuffOverType.normal
+
+	logf.battle.buff.over(" buff over!!! id=%s cfgId=%s holder=%s", slot0.id, slot0.cfgId, slot0.holder.seat)
+
+	if slot0.csvCfg.easyEffectFunc and slot0.isEffect then
+		slot0.overType = slot1.endType
+
+		slot0:doEffect(slot0.csvCfg.easyEffectFunc, slot0.doEffectValue, true)
+	end
+
+	if slot1.endType ~= battle.BuffOverType.clean then
+		if slot1.triggerCtrlEnd then
+			slot0:triggerByMoment(battle.BuffTriggerPoint.onBuffControlEnd)
+		end
+
+		slot0:triggerByMoment(({
+			battle.BuffTriggerPoint.onBuffOverNormal,
+			battle.BuffTriggerPoint.onBuffOverDispel,
+			battle.BuffTriggerPoint.onBuffOverlay
+		})[slot1.endType])
+		slot0:triggerByMoment(battle.BuffTriggerPoint.onBuffOver)
+	end
+
+	slot0.triggerAddAttrTb = {}
+
+	slot0:overBuffsInTable(slot0.bondChildBuffsTb, slot1, function (slot0, slot1)
+		return slot0.id < slot1.id
+	end)
+	slot0:overBuffsInTable(slot0.bondToOtherBuffsTb, slot1, function (slot0, slot1)
+		return slot0.id < slot1.id
+	end)
+
+	if slot1.endType ~= battle.BuffOverType.clean and slot0.csvCfg.easyEffectFunc == "reborn" then
+		slot0:triggerByMoment(battle.BuffTriggerPoint.onHolderReborn)
+	end
+
+	if slot0.isShow then
+		battleEasy.deferNotifyCantJump(slot0.holder.view, "deleteBuffEffect", {
+			aniSelectId = slot0:getEffectAniSelectId(),
+			id = slot0.id,
+			cfgId = slot0.cfgId,
+			cfg = slot0.csvCfg,
+			tostrModel = tostring(slot0.holder)
+		})
+
+		if slot0.csvCfg.stageArgs then
+			slot0.scene:recordSceneAlterBuff(slot0.id, nil)
+			battleEasy.deferNotifyCantJump(slot0.holder.view, "alterBattleScene", {
+				restore = true,
+				buffId = slot0.id
+			})
+		end
+
+		slot0:playBuffProcessView()
+
+		if slot0.weatherCfgId then
+			slot0.isShow = false
+
+			for slot6, slot7 in slot0.scene:ipairsHeros() do
+				if slot7 and slot7:checkOverlaySpecBuffExit("weather") then
+					slot0.isShow = true
+
+					break
+				end
+			end
+
+			battleEasy.deferNotifyCantJump(slot0.holder.view, "weatherRefresh", slot0)
+		end
+	end
+
+	if slot0.overlayType == battle.BuffOverlayType.Coexist or slot0.overlayType == battle.BuffOverlayType.CoexistLifeRound then
+		slot0.holder.buffOverlayCount[slot0.cfgId] = slot0.holder.buffOverlayCount[slot0.cfgId] - 1
+
+		if slot0.holder.buffOverlayCount[slot0.cfgId] > 0 and slot0.isShow then
+			if slot0.overlayType == battle.BuffOverlayType.Coexist then
+				battleEasy.deferNotifyCantJump(slot0.holder.view, "playBuffAniEffect", slot0:getBuffEffectAniArgs(), {
+					"iconEffect",
+					"mainEffect"
+				})
+			end
+		end
+	end
+
+	for slot5, slot6 in pairs(slot0.exRecordNameTb) do
+		slot0.scene.extraRecord:cleanEventByKey(slot5, slot0.id)
+	end
+
+	slot0.holder:onBuffImmuneChange(slot0, true)
+	battleComponents.unbindAll(slot0)
+	slot0.holder.buffs:erase(slot0.id)
+	slot0.scene:deleteBuff(slot0.id)
+	slot0.scene:checkCowWithBuff(slot0)
+end
+
+function slot0.judgeOver(slot0)
+	return slot0:getLifeRound() <= 0
+end
+
+function slot5(slot0, slot1, slot2)
+	if (not slot0 or slot0 == battle.lifeRoundType.battleTurn or slot0 == battle.lifeRoundType.pureBattleTurn) and (slot1 == battle.BuffTriggerPoint.onHolderBattleTurnStart and (slot2 and slot2 == 0) or slot1 == battle.BuffTriggerPoint.onHolderBattleTurnEnd and (not slot2 or slot2 == 1)) then
+		return true
+	end
+
+	if slot0 and slot0 == battle.lifeRoundType.round and (slot1 == battle.BuffTriggerPoint.onRoundStart and slot3 or slot1 == battle.BuffTriggerPoint.onRoundEnd and slot4) then
+		return true
+	end
+
+	return false
+end
+
+slot6 = {
+	function (slot0, slot1)
+		return slot0.holder:getBattleRoundAllWave(battle.BuffTriggerPoint.onHolderBattleTurnEnd == slot1 and 1 or 2)
+	end,
+	function (slot0, slot1)
+		return slot0.scene.play.totalRound + slot0.csvCfg.lifeTimeEnd * (battle.BuffTriggerPoint.onRoundEnd == slot1 and 1 or 0)
+	end,
+	function (slot0, slot1)
+		return slot0.holder:getBattleRoundAllWave(battle.BuffTriggerPoint.onHolderBattleTurnEnd == slot1 and 1 or 2, true)
+	end
+}
+
+function slot0.setLeftRound(slot0, slot1)
+	slot2 = 0
+
+	if (slot0.csvCfg.lifeRoundType or battle.lifeRoundType.battleTurn) == battle.lifeRoundType.pureBattleTurn and slot0.scene:getExtraBattleRoundMode() ~= battle.ExtraBattleRoundMode.normal then
+		return
+	end
+
+	if slot0.nowRound < uv0[slot3](slot0, slot1) then
+		slot0.lifeRound = slot0.lifeRound - (slot4 - slot0.nowRound)
+		slot0.nowRound = slot4
+
+		if slot0:getLifeRound() <= 0 then
+			slot0:over()
+
+			return
+		end
+
+		if slot0.overlayType == 5 then
+			slot5 = slot0.overlayCount
+
+			for slot9, slot10 in maptools.order_pairs(slot0.lifeRounds) do
+				if slot10 > 0 and slot10 - slot2 <= 0 then
+					slot0.overlayCount = slot0.overlayCount - 1
+					slot0.overlayCount = math.max(0, slot0.overlayCount)
+
+					table.remove(slot0.lifeRounds, slot9)
+				end
+			end
+
+			if slot5 - slot0.overlayCount > 0 then
+				slot0:refreshLerpValue(true)
+
+				if slot0.isShow then
+					battleEasy.deferNotifyCantJump(slot0.holder.view, "playBuffAniEffect", slot0:getBuffEffectAniArgs())
+				end
+			end
+		end
+
+		slot0.nodeManager:update(slot2)
+	end
+
+	if slot0.weatherCfgId then
+		battleEasy.deferNotifyCantJump(slot0.holder.view, "weatherRefresh", slot0)
+	end
+end
+
+function slot0.update(slot0, slot1)
+	if slot0.isOver then
+		return
+	end
+
+	if slot0.scene.play.battleRoundTriggerId and gExtraRoundTrigger[slot2] and gExtraRoundTrigger[slot2].forbiddenBuff[slot1] then
+		return
+	end
+
+	slot0:triggerBuffValueByNode(slot1)
+	slot0:fillTriggerEnv(slot1)
+
+	if not slot0.holder then
+		slot0:overClean()
+
+		return
+	end
+
+	if slot0.holder:isDeath() and slot0.nodeManager:isNoDeathTrigger() and not slot0.csvCfg.noDelWhenFakeDeath then
+		slot0:over()
+
+		return
+	end
+
+	if slot0.isAuraType and slot0.caster:isDeath() then
+		slot0:overClean()
+
+		return
+	end
+
+	if uv0(slot0.csvCfg.lifeRoundType, slot1, slot0.csvCfg.lifeTimeEnd) then
+		slot0:setLeftRound(slot1)
+	end
+
+	if slot0.nodeManager:isNode0TriggerPoint(slot1) and not slot0.scene.buffGlobalManager:checkBuffCanAdd(slot0, slot0.holder) then
+		slot0:overClean()
+
+		return
+	end
+
+	if slot0:isSpecBuff() and slot1 == battle.BuffTriggerPoint.onBuffTrigger then
+		if not slot0.scene.buffGlobalManager:checkBuffCanAdd(slot0, slot0.holder) then
+			slot0:overClean()
+
+			return
+		end
+
+		slot0.scene.buffGlobalManager:refreshBuffLimit(slot0.scene, slot0)
+	end
+
+	slot0:triggerByMoment(slot1)
+end
+
+function slot0.isTrigger(slot0, slot1, slot2)
+	if uv0[slot1] then
+		slot3 = slot0.nodeManager:getExtraAttack(slot1)
+		slot4 = true
+
+		if not (slot0.scene:beInExtraAttack() and (slot3[2] or slot3[3]) or not slot3[3]) then
+			return false
+		end
+	end
+
+	if slot1 == battle.BuffTriggerPoint.onBuffTrigger then
+		if slot0.id == slot2.buffId then
+			slot0.scene.buffGlobalManager:recordBuffTriggerType(slot0.holder.id, slot0.csvCfg.easyEffectFunc)
+		end
+
+		if not slot3 and uv1[slot2.easyEffectFunc] and slot0.nodeManager:isTriggerPointExist(slot1) and slot2.checkEffectFunc == slot0.csvCfg.easyEffectFunc and slot2.isFirstTrigger then
+			return true
+		end
+
+		return slot3
+	elseif slot1 == battle.BuffTriggerPoint.onHolderBattleTurnStart or slot1 == battle.BuffTriggerPoint.onHolderBattleTurnEnd or slot1 == battle.BuffTriggerPoint.onRoundStart or slot1 == battle.BuffTriggerPoint.onRoundEnd then
+		return true
+	end
+
+	return slot0.nodeManager:isTriggerPointExist(slot1)
+end
+
+function slot0.isSpecBuff(slot0)
+	return uv0[slot0.csvCfg.easyEffectFunc] or false
+end
+
+function slot0.refresh(slot0, slot1, slot2)
+	slot2 = slot1.overlayCount or slot2 or 0
+
+	if slot0.overlayType == nil then
+		return
+	end
+
+	if (slot3 == battle.BuffOverlayType.Overlay or slot3 == battle.BuffOverlayType.CoexistLifeRound) and slot0:getOverLayCount() == slot0.csvCfg.overlayLimit and slot2 >= 0 then
+		slot0.lifeRound = slot1.lifeRound
+
+		return
+	end
+
+	if slot2 > 0 and (slot3 == battle.BuffOverlayType.Overlay or slot3 == battle.BuffOverlayType.OverlayDrop or slot3 == battle.BuffOverlayType.CoexistLifeRound) then
+		slot0.lifeRound = slot1.lifeRound
+	end
+
+	if slot3 == battle.BuffOverlayType.Overlay or slot3 == battle.BuffOverlayType.OverlayDrop or slot3 == battle.BuffOverlayType.CoexistLifeRound or slot3 == battle.BuffOverlayType.IndeLifeRound then
+		slot0.overlayCount = cc.clampf(slot0.overlayCount + slot2, 1, slot0.csvCfg.overlayLimit)
+
+		if slot0.isNumberType then
+			if slot3 == battle.BuffOverlayType.IndeLifeRound then
+				table.insert(slot0.lifeRounds, slot0.lifeRound)
+			elseif slot3 == battle.BuffOverlayType.Overlay then
+				slot0.buffValue = clone(slot0:cfg2Value(slot1.value))
+			end
+
+			slot0:refreshLerpValue()
+		end
+
+		if slot0.isShow then
+			slot0.isOnceEffectPlayed = true
+
+			if slot3 == battle.BuffOverlayType.Overlay or slot3 == battle.BuffOverlayType.OverlayDrop then
+				battleEasy.deferNotifyCantJump(slot0.holder.view, "playBuffAniEffect", slot0:getBuffEffectAniArgs())
+			end
+		end
+	end
+end
+
+function slot0.triggerPrecheck(slot0)
+	if table.get(slot0, "objThatTriggeringMeNow", "source") == tostring(slot0) then
+		return false
+	end
+
+	return true
+end
+
+function slot0.triggerByNode(slot0, slot1)
+	if slot0:triggerPrecheck() and slot0.nodeManager:check(slot1) then
+		slot0:takeEffect(slot1)
+	end
+end
+
+function slot0.triggerBuffValueByNode(slot0, slot1)
+	slot0.nodeManager:visitNodeByPoint(slot1, function (slot0, slot1)
+		if slot1.buffValueUpdatePoint and slot1.buffValueUpdatePoint == uv0 then
+			if uv1.args.buffValueFormulaEnv then
+				uv1.buffValue = clone(battleCsv.doFormula(uv1.args.buffValueFormula, uv1.args.buffValueFormulaEnv)) or uv1.buffValue
+			else
+				uv1.buffValue = clone(uv1:cfg2Value(uv1.args.buffValueFormula)) or uv1.buffValue
+			end
+		end
+	end)
+end
+
+function slot0.triggerByMoment(slot0, slot1)
+	if not slot0:triggerPrecheck() then
+		return
+	end
+
+	slot0.nodeManager:visitNodeByPoint(slot1, function (slot0, slot1)
+		uv0:triggerByNode(slot0)
+	end)
+end
+
+function slot7(slot0)
+	table.sort(slot0, function (slot0, slot1)
+		return slot1.pro < slot0.pro
+	end)
+
+	for slot5 = 1, table.length(slot0) do
+		for slot9 = slot5 + 1, slot1 do
+			if slot0[slot5].pro == slot0[slot9].pro then
+				table.insert(slot0[slot5].buff.bondToOtherBuffsTb, slot0[slot9].buff)
+				table.insert(slot0[slot9].buff.bondToOtherBuffsTb, slot0[slot5].buff)
+			end
+
+			if math.floor(slot0[slot5].pro) - math.floor(slot0[slot9].pro) == 1 then
+				table.insert(slot0[slot5].buff.bondChildBuffsTb, slot0[slot9].buff)
+			end
+		end
+	end
+end
+
+function slot0.takeEffect(slot0, slot1)
+	slot2 = slot0.nodeManager:trigger(slot1)
+	slot3 = nil
+
+	if slot1 == battle.BuffTriggerPoint.onNodeCall then
+		if slot0.csvCfg.easyEffectFunc then
+			slot0.value = slot0:getValue()
+			slot0.doEffectValue = clone(slot0.value)
+			slot3 = slot0:doEffect(slot0.csvCfg.easyEffectFunc, slot0.value)
+		end
+	else
+		slot0.castBuffGroup:push_back({})
+
+		for slot7, slot8 in ipairs(slot2.effectFuncs or {}) do
+			slot9 = slot0:cfg2ValueWithTrigger(slot2.funcArgs[slot7])
+			slot9.originArgs = slot2.funcArgs[slot7]
+			slot3 = slot0:doEffect(slot8 == "addAttr" and "addAttrNode" or slot8, slot9)
+		end
+
+		for slot7, slot8 in pairs(slot0.castBuffGroup:back()) do
+			uv0(slot8)
+		end
+
+		slot0.castBuffGroup:pop_back()
+	end
+
+	logf.battle.buff.takeEffect("buff takeEffect !!! id=%s cfgId=%s groupid=%s holder=%s originValue=%s value=%s", slot0.id, slot0.cfgId, slot0.csvCfg.group, slot0.holder.seat, slot0.buffValue, slot0.value)
+	logf.battle.buff.value("buff value !!! csv=%s buffValue=%s ", slot0.args.value, slot0.value)
+
+	slot0.isEffect = true
+
+	slot0.nodeManager:onTriggerEnd(slot1, slot3)
+
+	if slot0.csvCfg.showExplorer then
+		battleEasy.queueNotify("queueExplorer", slot0.caster.faceTo, csv.explorer.explorer[slot0.csvCfg.explorerID].simpleIcon)
+	end
+
+	if slot0.csvCfg.showHeldItem then
+		battleEasy.deferNotifyCantJump(slot0.caster.view, "showHeldItemEffect", slot0.csvCfg.heldItemID)
+	end
+end
+
+function slot0.onSkillType(slot0, slot1)
+	if not (math.abs(slot1) > 0 and slot0.holder or slot0.caster).curSkill then
+		errorInWindows("onSkillType in %s curSkill is nil", slot0:toHumanString())
+
+		return false
+	end
+
+	if slot3.skillType == battle.SkillType.NormalSkill then
+		if slot1 == 1 and slot3.skillType2 == battle.MainSkillType.BigSkill then
+			return true
+		elseif slot1 == 2 and slot3.skillType2 == battle.MainSkillType.SmallSkill then
+			return true
+		elseif slot1 == 3 and slot3.skillType2 == battle.MainSkillType.NormalSkill then
+			return true
+		elseif slot1 == 4 then
+			return true
+		elseif slot1 == 5 and slot3.skillType2 ~= battle.MainSkillType.BigSkill then
+			return true
+		end
+	end
+
+	return false
+end
+
+function slot0.onCurHP(slot0, slot1, slot2, slot3)
+	slot4 = false
+	slot5 = math.floor(slot0.holder:hp())
+
+	if slot1 == 1 then
+		if slot5 == math.floor(slot0.holder:hpMax() * slot2) then
+			return true
+		end
+
+		if slot5 < slot6 then
+			slot4 = true
+		end
+	elseif slot1 == 2 then
+		if slot5 == slot2 then
+			return true
+		end
+
+		if slot5 < slot2 then
+			slot4 = true
+		end
+	end
+
+	if slot3 == 1 then
+		slot4 = not slot4
+	end
+
+	return slot4
+end
+
+function slot0.onHpValue(slot0, slot1, slot2, slot3)
+	slot4 = nil
+	slot5 = false
+	slot6 = nil
+
+	if slot0.holder.curAttackMeObj and slot7.curSkill then
+		slot8 = slot7.curSkill:getTargetsFinalResult(slot0.holder.id)
+		slot6 = slot8.damage.real:get(battle.ValueType.normal) - slot8.resumeHp.real:get(battle.ValueType.normal)
+	end
+
+	if not slot6 then
+		return slot5
+	end
+
+	slot6 = math.floor(math.abs(slot6))
+
+	if slot1 == 1 then
+		if slot6 > slot0.holder:hpMax() * slot2 then
+			return true
+		end
+
+		if slot6 < slot8 then
+			slot4 = slot4 + slot6
+		end
+
+		print("damageCount:", slot4)
+	elseif slot1 == 2 then
+		if slot6 == slot2 then
+			return true
+		end
+
+		if slot6 < slot2 then
+			slot5 = true
+		end
+	end
+
+	if slot3 == 1 then
+		slot5 = not slot5
+	end
+
+	return slot5
+end
+
+function slot0.onSkillDamage(slot0, slot1, slot2, slot3)
+	slot4 = false
+	slot5 = nil
+
+	if slot0.holder.curAttackMeObj and slot6.curSkill then
+		slot7 = slot6.curSkill:getTargetsFinalResult(slot0.holder.id)
+		slot5 = slot7.damage.real:get(battle.ValueType.normal) - slot7.resumeHp.real:get(battle.ValueType.normal)
+	end
+
+	if not slot5 then
+		return slot4
+	end
+
+	slot5 = math.floor(math.abs(slot5))
+
+	if slot1 == 1 then
+		if slot5 == math.floor(slot0.holder:hpMax() * slot2) then
+			return true
+		end
+
+		if slot5 < slot7 then
+			slot4 = true
+		end
+	elseif slot1 == 2 then
+		if slot5 == slot2 then
+			return true
+		end
+
+		if slot5 < slot2 then
+			slot4 = true
+		end
+	end
+
+	if slot3 == 1 then
+		slot4 = not slot4
+	end
+
+	return slot4
+end
+
+function slot0.onSomeFlag(slot0, slot1)
+	for slot6, slot7 in ipairs(slot1) do
+		print(slot7)
+
+		slot2 = true and slot0:cfg2ValueWithTrigger(slot7)
+	end
+
+	return slot2
+end
+
+function slot0.getObjectsByCfg(slot0, slot1)
+	slot2 = {
+		left = {
+			{
+				x = 2,
+				y = 1
+			},
+			{
+				x = 2,
+				y = 2
+			},
+			{
+				x = 2,
+				y = 3
+			},
+			{
+				x = 1,
+				y = 1
+			},
+			{
+				x = 1,
+				y = 2
+			},
+			{
+				x = 1,
+				y = 3
+			}
+		},
+		right = {
+			[7] = {
+				x = 1,
+				y = 1
+			},
+			[8] = {
+				x = 1,
+				y = 2
+			},
+			[9] = {
+				x = 1,
+				y = 3
+			},
+			[10] = {
+				x = 2,
+				y = 1
+			},
+			[11] = {
+				x = 2,
+				y = 2
+			},
+			[12] = {
+				x = 2,
+				y = 3
+			}
+		}
+	}
+	slot3 = {
+		left = {
+			{
+				4,
+				5,
+				6
+			},
+			{
+				1,
+				2,
+				3
+			}
+		},
+		right = {
+			{
+				7,
+				8,
+				9
+			},
+			{
+				10,
+				11,
+				12
+			}
+		}
+	}
+	slot4 = {
+		{
+			0,
+			1
+		},
+		{
+			1,
+			0
+		},
+		{
+			0,
+			-1
+		},
+		{
+			-1,
+			0
+		}
+	}
+
+	function slot5(slot0)
+		slot2 = {}
+
+		for slot6, slot7 in uv0.scene:getHerosMap(slot0.force):order_pairs() do
+			if slot7 and not slot7:isDeath() then
+				table.insert(slot2, slot7)
+			end
+		end
+
+		return slot2
+	end
+
+	function slot6(slot0)
+		slot2 = {}
+
+		for slot6, slot7 in uv0.scene:getHerosMap(3 - slot0.force):order_pairs() do
+			if slot7 and not slot7:isDeath() then
+				table.insert(slot2, slot7)
+			end
+		end
+
+		return slot2
+	end
+
+	function slot7(slot0, slot1)
+		slot4 = (slot0.force == 1 and uv0.left or uv0.right)[slot0.seat]
+		slot5 = {
+			[(slot0.force == 1 and uv1.left or uv1.right)[slot11][slot12]] = true
+		}
+
+		for slot9, slot10 in ipairs(uv2) do
+			slot12 = slot10[2] + slot4.y
+
+			if slot10[1] + slot4.x > 0 and slot11 <= 2 and slot12 > 0 and slot12 <= 3 then
+				-- Nothing
+			end
+		end
+
+		return arraytools.filter(slot1, function (slot0, slot1)
+			return uv0[slot1.seat]
+		end)
+	end
+
+	function slot8(slot0)
+		if table.length(slot0) > 0 then
+			return ymrand.random(1, table.length(slot0))
+		end
+	end
+
+	if type(slot1) == "number" then
+		if slot1 == battle.BuffExtraTargetType.holder then
+			return {
+				slot0.holder
+			}
+		elseif slot1 == battle.BuffExtraTargetType.caster then
+			return {
+				slot0.caster
+			}
+		elseif slot1 == battle.BuffExtraTargetType.holderForceNoDeathRandom then
+			slot10 = slot5(slot0.holder)
+
+			return {
+				slot10[slot8(slot10)]
+			}
+		elseif slot1 == battle.BuffExtraTargetType.surroundHolderNoDath then
+			return slot7(slot0.holder, slot5(slot0.holder))
+		elseif slot1 == battle.BuffExtraTargetType.holderForce then
+			return slot5(slot0.holder)
+		elseif slot1 == battle.BuffExtraTargetType.casterForceNoDeathRandom then
+			slot10 = slot5(slot0.caster)
+
+			return {
+				slot10[slot8(slot10)]
+			}
+		elseif slot1 == battle.BuffExtraTargetType.surroundCasterNoDath then
+			return slot7(slot0.caster, slot5(slot0.caster))
+		elseif slot1 == battle.BuffExtraTargetType.casterForce then
+			return slot5(slot0.caster)
+		elseif slot1 == battle.BuffExtraTargetType.holderEnemyForce then
+			return slot6(slot0.holder)
+		elseif slot1 == battle.BuffExtraTargetType.casterEnemyForce then
+			return slot6(slot0.caster)
+		elseif slot1 == battle.BuffExtraTargetType.skillOwner then
+			return {
+				slot0.objThatTriggeringMeNow.owner
+			}
+		elseif slot1 == battle.BuffExtraTargetType.killHolder then
+			return {
+				slot0.holder.attackMeDeadObj
+			}
+		elseif slot1 == battle.BuffExtraTargetType.casterEnemyForceRandom then
+			slot10 = slot6(slot0.caster)
+
+			return {
+				slot10[slot8(slot10)]
+			}
+		elseif slot1 == battle.BuffExtraTargetType.surroundHolderKill then
+			return slot7(slot0.objThatTriggeringMeNow, slot5(slot0.objThatTriggeringMeNow))
+		elseif slot1 == battle.BuffExtraTargetType.triggerObject then
+			return {
+				slot0.objThatTriggeringMeNow.obj
+			}
+		else
+			return slot0.extraTargets[slot1]
+		end
+	elseif slot9 == "table" then
+		if slot1.input and slot1.process then
+			return newTargetFinder(slot0.caster, slot0.holder, nil, , slot1)
+		end
+	else
+		return slot0:cfg2ValueWithTrigger(slot1)
+	end
+end
+
+function slot0.refreshExtraTargets(slot0, slot1, slot2)
+	slot0.extraTargets[slot1] = slot2
+end
+
+slot8 = {
+	[battle.BuffTriggerPoint.onHolderAttackBefore] = true,
+	[battle.BuffTriggerPoint.onHolderBeforeBeHit] = true,
+	[battle.BuffTriggerPoint.onHolderAfterBeHit] = true,
+	[battle.BuffTriggerPoint.onHolderFinallyBeHit] = true,
+	[battle.BuffTriggerPoint.onHolderAttackEnd] = true,
+	[battle.BuffTriggerPoint.onHolderKillHandleChooseTarget] = true,
+	[battle.BuffTriggerPoint.onHolderKillTarget] = true,
+	[battle.BuffTriggerPoint.onHolderMateKilledBySkill] = true
+}
+
+function slot0.fillTriggerEnv(slot0, slot1)
+	slot0.triggerEnv = {}
+
+	if uv0[slot1] then
+		slot0.triggerEnv.skill = battleCsv.CsvSkill.new(slot0.objThatTriggeringMeNow)
+	elseif slot1 == battle.BuffTriggerPoint.onBuffBeAdd then
+		slot0.triggerEnv.beAddBuff = battleCsv.CsvBuff.new(slot0.objThatTriggeringMeNow)
+	else
+		slot0.triggerEnv = slot0.objThatTriggeringMeNow or slot0.triggerEnv
+	end
+end
+
+function slot0.playTriggerPointEffect(slot0)
+	if slot0.isOver then
+		return
+	end
+
+	if slot0.csvCfg and not slot0.csvCfg.buffActionEffect then
+		return
+	end
+
+	if slot0.csvCfg.buffActionEffect and not slot0.csvCfg.buffActionEffect.triggerEffect then
+		return
+	end
+
+	if csvClone(slot0.csvCfg.buffActionEffect.triggerEffect).onceEffectResPath then
+		slot1.onceEffectPos = slot1.onceEffectPos or 0
+		slot1.onceEffectOffsetPos = slot1.onceEffectOffsetPos or cc.p(0, 0)
+	end
+
+	slot2 = slot0:getBuffEffectAniArgs()
+	slot2.csvCfg = slot1
+
+	battleEasy.deferNotifyCantJump(slot0.holder.view, "playBuffAniEffect", slot2)
+
+	if slot1.showHeldItem then
+		battleEasy.deferNotifyCantJump(slot0.holder.view, "showHeldItemEffect", slot1.heldItemID)
+	end
+end
+
+function slot0.getLifeRound(slot0)
+	return slot0.lifeRound
+end
+
+function slot0.getValue(slot0)
+	if not slot0.buffValue then
+		return
+	end
+
+	if slot0.isNumberType then
+		if slot0.overlayType == battle.BuffOverlayType.Overlay or slot0.overlayType == battle.BuffOverlayType.OverlayDrop then
+			slot3 = slot0.buffValue * math.max((slot0.buffInitEnhanceVal or 0) + slot0.holder:getBuffEnhance(slot0:group(), 2) + 1, 0) * slot0:getOverLayCount()
+		elseif slot0.overlayType == battle.BuffOverlayType.IndeLifeRound then
+			slot3 = slot3 * (1 + table.length(itertools.filter(slot0.lifeRounds, function (slot0, slot1)
+				return slot1 > 0
+			end)))
+		end
+
+		return slot3
+	end
+
+	return slot0.value or clone(slot0.buffValue)
+end
+
+function slot0.setValue(slot0, slot1)
+	slot0.buffValue = slot1
+	slot0.value = slot0:getValue()
+	slot0.isNumberType = type(slot0.buffValue) == "number"
+end
+
+function slot0.refreshLerpValue(slot0, slot1)
+	if not slot0.isNumberType then
+		return
+	end
+
+	if slot0.csvCfg.easyEffectFunc and slot0.nodeManager:isNode0TriggerPoint(battle.BuffTriggerPoint.onBuffCreate) then
+		slot0.value = slot0:getValue()
+		slot0.doEffectValue = slot0.value
+
+		slot0:doEffect(slot0.csvCfg.easyEffectFunc, slot0.value - slot0.doEffectValue, slot1)
+	end
+end
+
+function slot0.playBuffProcessView(slot0)
+	slot1 = slot0.isOver
+
+	if slot0.csvCfg.buffActionEffect then
+		for slot5, slot6 in csvMapPairs(slot0.csvCfg.buffActionEffect) do
+			print("action:", slot5)
+			print("replaceAct:", slot6)
+
+			if slot1 then
+				slot0.holder.scene:addObjViewToBattleTurn(slot0.holder, "PopAction", battle.SpriteActionTable[slot5] or slot5, slot0.id)
+			else
+				slot0.holder.scene:addObjViewToBattleTurn(slot0.holder, "PushAction", battle.SpriteActionTable[slot5] or slot5, slot6, slot0.id)
+			end
+		end
+
+		slot0.holder.scene:addObjViewToBattleTurn(slot0.holder, "PlayState", battle.SpriteActionTable.standby)
+	end
+end
+
+function slot0.checkBuffCanAdd(slot0, slot1, slot2, slot3)
+	if not slot0.isInited then
+		return true
+	end
+
+	slot4 = true
+
+	if gBuffGroupRelationCsv[slot0:group()] then
+		if battleCsv.hasBuffGroup(slot5.immuneGroup, slot2) and slot3.beImmune == 1 then
+			slot4 = false
+		end
+
+		if csvSize(slot5.powerGroup) > 0 and not battleCsv.hasBuffGroup(slot5.powerGroup, slot2) then
+			return false
+		end
+	end
+
+	if slot0.csvCfg.immuneBuff and slot3.beImmune == 1 then
+		for slot10, slot11 in ipairs(slot6) do
+			if slot1 == slot11 then
+				slot4 = false
+
+				break
+			end
+		end
+	end
+
+	if not slot4 then
+		battleEasy.deferNotifyCantJump(slot0.holder.view, "showBuffImmuneEffect", slot2)
+		slot0:triggerByMoment(battle.BuffTriggerPoint.onBuffTrigger, {
+			buffId = slot0.id
+		})
+	end
+
+	return slot4
+end
+
+function slot0.group(slot0)
+	slot1 = slot0.csvCfg.group
+
+	if slot0.scene:getConvertGroupCache() and slot2.assignGroup[slot1] then
+		return slot2.convertGroup
+	end
+
+	return slot1
+end
+
+function slot0.addExRecord(slot0, slot1, slot2)
+	slot0.scene.extraRecord:addExRecord(slot1, slot2, slot0.id)
+
+	slot0.exRecordNameTb[slot1] = true
+end
+
+function slot0.getEventByKey(slot0, slot1)
+	return slot0.scene.extraRecord:getEventByKey(slot1, slot0.id)
+end
+
+function slot0.getOverLayCount(slot0)
+	if slot0.overlayType == battle.BuffOverlayType.Coexist or slot0.overlayType == battle.BuffOverlayType.CoexistLifeRound then
+		return slot0.holder.buffOverlayCount[slot0.cfgId]
+	end
+
+	return slot0.overlayCount
+end
+
+function slot0.BeDispel(slot0, slot1)
+	if slot1 then
+		return slot0:over({
+			endType = battle.BuffOverType.dispel
+		})
+	end
+
+	if slot0.overlayType == battle.BuffOverlayType.Overlay or slot0.overlayType == battle.BuffOverlayType.OverlayDrop then
+		if slot0.overlayCount == 1 then
+			return slot0:over({
+				endType = battle.BuffOverType.dispel
+			})
+		end
+
+		slot0:refresh(slot0.args, -1)
+	end
+end
+
+function slot0.getEffectAniSelectId(slot0)
+	if slot0.csvCfg.effectAniChoose.type == battle.BuffEffectAniType.OverlayCount then
+		return slot1.effectAniChoose.mapping[slot0:getOverLayCount()]
+	end
+
+	return 1
+end
+
+function slot0.getBuffEffectAniArgs(slot0)
+	slot1 = false
+
+	if slot0.holder.scene.play.curHero then
+		slot1 = slot2.id == slot0.holder.id
+	end
+
+	return {
+		aniSelectId = slot0:getEffectAniSelectId(),
+		id = slot0.id,
+		cfgId = slot0.cfgId,
+		overlayCount = slot0:getOverLayCount(),
+		csvCfg = slot0.csvCfg,
+		tostrModel = tostring(slot0.holder),
+		tostrCaster = tostring(slot0.caster),
+		isSelfTurn = slot1,
+		isOnceEffectPlayed = slot0.isOnceEffectPlayed,
+		args = slot0.args
+	}
+end
+
+function slot0.updateWithTrigger(slot0, slot1, slot2)
+	slot0.objThatTriggeringMeNow = slot2
+
+	slot0:update(slot1)
+end
+
+function slot0.onTriggerEvent(slot0, slot1)
+	if slot0:isTrigger(slot1.name, slot1.args) then
+		slot0:updateWithTrigger(slot2, slot3)
+	end
+end
+
+function slot0.setCsvObject(slot0, slot1)
+	slot0.csvObject = slot1
+end
+
+function slot0.getCsvObject(slot0)
+	return slot0.csvObject
+end
+
+function slot0.toHumanString(slot0)
+	return string.format("BuffModel: %s(%s)", slot0.id, slot0.cfgId)
+end
